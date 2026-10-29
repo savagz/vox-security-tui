@@ -64,7 +64,7 @@ as_root() {
 
 install_file() {
     dest_dir=$(dirname "$2")
-    if [ -d "$dest_dir" ] && [ -w "$dest_dir" ]; then
+    if mkdir -p "$dest_dir" 2>/dev/null && [ -w "$dest_dir" ]; then
         install -m 0755 "$1" "$2"
     else
         as_root mkdir -p "$dest_dir"
