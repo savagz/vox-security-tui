@@ -19,11 +19,63 @@ VOXSecurityTUI es un **orquestador**: detecta qué herramientas de análisis de 
 
 ## Requisitos
 
-- Un toolchain de Rust con soporte para la edición 2024.
+- Linux x86_64 para el binario precompilado (estático, sin dependencias). En otras plataformas, compilá desde el código fuente.
 - Las herramientas de seguridad que quieras usar, instaladas y en el `PATH`. La app detecta cuáles están presentes y te guía para instalar las que falten.
 - Algunas herramientas (captura wireless, sockets crudos) requieren `root` o capabilities; la app corre los binarios con tus privilegios.
 
-## Compilar y correr
+## Instalación
+
+### Script de instalación (recomendado)
+
+Descarga el binario de la última release desde GitHub, verifica su checksum SHA-256 y lo instala en `/usr/local/bin` (usa `sudo` si hace falta):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/savagz/vox-security-tui/main/install.sh | sh
+```
+
+Requiere `curl` o `wget`, `tar` y `sha256sum`.
+
+Opciones (se pasan con `sh -s --`):
+
+| Opción             | Descripción                                               |
+|--------------------|-----------------------------------------------------------|
+| `--prefix <dir>`   | Directorio de instalación (por defecto `/usr/local/bin`)  |
+| `--version <tag>`  | Versión a instalar, p. ej. `v1.0.0` (por defecto la última) |
+| `--uninstall`      | Elimina el binario instalado                              |
+| `-h`, `--help`     | Muestra la ayuda                                          |
+
+La variable de entorno `VOXSECURITY_VERSION` equivale a `--version`.
+
+Instalar una versión concreta sin `sudo`, en el directorio del usuario:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/savagz/vox-security-tui/main/install.sh \
+  | sh -s -- --version v1.0.0 --prefix "$HOME/.local/bin"
+```
+
+Desinstalar (usá el mismo `--prefix` con el que instalaste):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/savagz/vox-security-tui/main/install.sh | sh -s -- --uninstall
+```
+
+### Descarga manual
+
+Cada [release](https://github.com/savagz/vox-security-tui/releases) incluye `voxsecurity-tui-<versión>-x86_64-linux.tar.gz` y su `.sha256`:
+
+```sh
+v=v1.0.0
+base=https://github.com/savagz/vox-security-tui/releases/download/$v
+curl -fsSLO "$base/voxsecurity-tui-$v-x86_64-linux.tar.gz"
+curl -fsSLO "$base/voxsecurity-tui-$v-x86_64-linux.tar.gz.sha256"
+sha256sum -c "voxsecurity-tui-$v-x86_64-linux.tar.gz.sha256"
+tar -xzf "voxsecurity-tui-$v-x86_64-linux.tar.gz"
+sudo install -m 0755 "voxsecurity-tui-$v-x86_64-linux/voxsecurity-tui" /usr/local/bin/
+```
+
+### Desde el código fuente
+
+Requiere un toolchain de Rust con soporte para la edición 2024.
 
 ```sh
 git clone https://github.com/savagz/vox-security-tui
