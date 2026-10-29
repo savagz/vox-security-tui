@@ -1,0 +1,131 @@
+# VOXSecurityTUI
+
+Una interfaz de terminal (TUI) para auditoría de seguridad autorizada. Construida en Rust con [ratatui](https://ratatui.rs).
+
+VOXSecurityTUI es un **orquestador**: detecta qué herramientas de análisis de seguridad están instaladas en el host, las presenta en un catálogo y ejecuta la que elijas contra un objetivo, mostrando su salida en vivo. No reempaqueta ni enlaza ninguna herramienta; sólo invoca los binarios que ya tenés instalados.
+
+> Uso autorizado. Esta herramienta está pensada para auditoría con permiso expreso del objetivo y para uso defensivo. Usarla sin autorización puede ser ilegal. Toda la actividad queda registrada en el log de la aplicación.
+
+## Características
+
+- Catálogo de ~30 herramientas (reconocimiento, escaneo de red, web, contraseñas, wireless, hardening, forense y tráfico) con su paquete por distribución y licencia, tomado de `SPEC.md`.
+- Detección periódica de qué herramientas están instaladas, con recarga en caliente del intervalo.
+- Instalación asistida desde el propio catálogo (tecla `I`), usando el gestor de paquetes detectado (apt, dnf, yum, zypper, pacman, paru, yay, brew).
+- Ejecución de una herramienta contra un objetivo con argumentos editables, y salida (stdout+stderr) transmitida línea a línea.
+- Historial de corridas con su estado y salida.
+- Resumen del host (CPU/RAM/disco) y aviso legal siempre visible.
+- Interfaz en español e inglés, conmutable en caliente.
+- Modo fixtures (datos simulados, sin ejecutar binarios) para probar la UI sin herramientas instaladas.
+
+## Requisitos
+
+- Un toolchain de Rust con soporte para la edición 2024.
+- Las herramientas de seguridad que quieras usar, instaladas y en el `PATH`. La app detecta cuáles están presentes y te guía para instalar las que falten.
+- Algunas herramientas (captura wireless, sockets crudos) requieren `root` o capabilities; la app corre los binarios con tus privilegios.
+
+## Compilar y correr
+
+```sh
+git clone https://github.com/savagz/vox-security-tui
+cd vox-security-tui
+cargo run --release
+```
+
+Para compilar sólo el binario:
+
+```sh
+cargo build --release
+./target/release/voxsecurity-tui
+```
+
+### Línea de comandos
+
+```
+voxsecurity-tui [OPCIONES]
+
+    -V, --version    Muestra la versión y sale
+    -h, --help       Muestra la ayuda y sale
+```
+
+### Modo fixtures
+
+`VOXSECURITY_FIXTURES=1` fuerza datos simulados; las corridas no ejecutan binarios reales. Se activa solo en macOS cuando no hay ninguna herramienta del catálogo instalada.
+
+```sh
+VOXSECURITY_FIXTURES=1 cargo run
+```
+
+## Pestañas
+
+| Tecla | Pestaña        |
+|-------|----------------|
+| `1`   | Resumen        |
+| `2`   | Catálogo       |
+| `3`   | Ejecutar       |
+| `4`   | Historial      |
+| `5`   | Verificación   |
+
+`Tab` y `Shift+Tab` recorren las pestañas.
+
+## Atajos
+
+Pulsá `h` en cualquier momento para la ayuda en pantalla. Los más usados:
+
+| Tecla                   | Acción                                      |
+|-------------------------|---------------------------------------------|
+| `q`, `Ctrl+C`           | Salir                                       |
+| `j`/`k`, flechas        | Bajar / subir                               |
+| `g`/`G`, `Home`/`End`   | Ir al inicio / fin                          |
+| `r`                     | Re-detectar herramientas                    |
+| `c`, `F1`               | Abrir configuración                         |
+| `h`                     | Ayuda                                       |
+| `/`                     | Filtrar el catálogo                         |
+| `i`                     | Detalle de la herramienta (Catálogo)        |
+| `I`                     | Instalar la herramienta (Catálogo)          |
+| `Enter`                 | Elegir herramienta / abrir corrida          |
+| `n`                     | Configurar y lanzar una corrida (Ejecutar)  |
+| `R`                     | Repetir la última corrida (Ejecutar)        |
+| `x`                     | Limpiar la salida (Ejecutar)                |
+
+## Configuración
+
+VOXSecurityTUI funciona sin archivo de configuración. Los ajustes se editan desde el overlay que abre `c` y se aplican al instante. El archivo se busca en:
+
+1. `config/voxsecurity.toml` relativo al directorio actual (modo dev, ignorado por git).
+2. `config.toml` en el directorio de config del usuario (resuelto por [`directories`](https://crates.io/crates/directories)).
+
+Ver [`config/voxsecurity.example.toml`](config/voxsecurity.example.toml).
+
+## Logs
+
+Los logs se escriben en un archivo diario `voxsecurity-tui.log` en el directorio de datos del usuario, nunca a la terminal. El nivel por defecto es `info`; cambialo con `RUST_LOG`:
+
+```sh
+RUST_LOG=debug cargo run
+```
+
+## Desarrollo
+
+```sh
+cargo test
+cargo clippy
+```
+
+## Estructura del proyecto
+
+```
+src/
+  main.rs        Punto de entrada, loop de eventos, despacho de acciones
+  app.rs         Estado de la aplicación y manejo de teclas
+  config.rs      Carga y guardado de configuración
+  deps.rs        Chequeos del sistema (gestor de paquetes, privilegios)
+  event.rs       Eventos de la aplicación
+  i18n.rs        Textos en español e inglés
+  keys.rs        Mapeo de teclas a acciones
+  poller.rs      Re-detección periódica de herramientas
+  setup.rs       Estado de la verificación del sistema
+  theme.rs       Paleta y glifos del lenguaje visual
+  tools/         Backend: catálogo, detección, ejecución (runner)
+  sysmon/        Métricas del host
+  ui/            Render: pestañas y widgets
+```

@@ -1,0 +1,11 @@
+# Copiá este archivo a config/voxsecurity.toml (modo dev) o dejá que la TUI
+# escriba el suyo en el directorio de config del usuario al guardar desde el
+# overlay de configuración (`c`).
+
+[poll]
+refresh_secs = 10       # cada cuántos segundos se re-detectan las herramientas
+
+[ui]
+tick_rate_ms = 250
+command_timeout_secs = 120   # segundos máximos por comando antes de abortarlo
+language = "es"              # "es" o "en" — también editable desde el overlay (`c`)
