@@ -5,7 +5,7 @@
 #
 # Options:
 #   --prefix <dir>   Install directory (default /usr/local/bin)
-#   --version <tag>  Version to install, e.g. v0.1.0 (default: latest)
+#   --version <tag>  Version to install, e.g. v1.0.0 (default: latest)
 #   --uninstall      Remove the installed binary
 #   -h, --help       Show this help
 #
@@ -23,7 +23,19 @@ info() { printf '%s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 usage() {
-    sed -n '2,12p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//' || true
+    cat <<'EOF_USAGE'
+voxsecurity-tui installer.
+
+  curl -fsSL https://raw.githubusercontent.com/savagz/vox-security-tui/main/install.sh | sh
+
+Options:
+  --prefix <dir>   Install directory (default /usr/local/bin)
+  --version <tag>  Version to install, e.g. v1.0.0 (default: latest)
+  --uninstall      Remove the installed binary
+  -h, --help       Show this help
+
+Environment: VOXSECURITY_VERSION is equivalent to --version.
+EOF_USAGE
 }
 
 while [ $# -gt 0 ]; do
@@ -91,11 +103,17 @@ if [ -z "$VERSION" ]; then
     [ -n "$VERSION" ] || die "could not determine the latest release"
 fi
 
+case "$VERSION" in
+    v*) ;;
+    *) VERSION="v$VERSION" ;;
+esac
+
 name="$BIN-$VERSION-x86_64-linux"
 base="https://github.com/$REPO/releases/download/$VERSION"
 
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT INT TERM
+trap 'rm -rf "$tmp"' EXIT
+trap 'exit 1' INT TERM
 
 info "Downloading $name.tar.gz..."
 fetch "$base/$name.tar.gz" "$tmp/$name.tar.gz" || die "could not download $base/$name.tar.gz"

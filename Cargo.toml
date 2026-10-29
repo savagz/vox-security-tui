@@ -1,6 +1,6 @@
 [package]
 name = "voxsecurity-tui"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 description = "TUI para auditoría de seguridad autorizada: orquesta herramientas de análisis de paquetes"
 repository = "https://github.com/savagz/vox-security-tui"
