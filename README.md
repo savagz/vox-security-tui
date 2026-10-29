@@ -4,7 +4,7 @@ Una interfaz de terminal (TUI) para auditoría de seguridad autorizada. Construi
 
 VOXSecurityTUI es un **orquestador**: detecta qué herramientas de análisis de seguridad están instaladas en el host, las presenta en un catálogo y ejecuta la que elijas contra un objetivo, mostrando su salida en vivo. No reempaqueta ni enlaza ninguna herramienta; sólo invoca los binarios que ya tenés instalados.
 
-> Uso autorizado. Esta herramienta está pensada para auditoría con permiso expreso del objetivo y para uso defensivo. Usarla sin autorización puede ser ilegal. Toda la actividad queda registrada en el log de la aplicación.
+> Uso autorizado. Esta herramienta está pensada para auditoría con permiso expreso del objetivo y para uso defensivo. Usarla sin autorización puede ser ilegal. Las corridas (herramienta, objetivo, comando y resultado), las instalaciones y los errores quedan registrados en el log de la aplicación (ver [Logs](#logs)).
 
 ## Características
 
@@ -12,7 +12,9 @@ VOXSecurityTUI es un **orquestador**: detecta qué herramientas de análisis de 
 - Detección periódica de qué herramientas están instaladas, con recarga en caliente del intervalo.
 - Instalación asistida desde el propio catálogo (tecla `I`), usando el gestor de paquetes detectado (apt, dnf, yum, zypper, pacman, paru, yay, brew).
 - Ejecución de una herramienta contra un objetivo con argumentos editables, y salida (stdout+stderr) transmitida línea a línea.
-- Historial de corridas con su estado y salida.
+- Timeout por comando: al vencer se termina la herramienta junto con todos sus procesos hijos (SIGTERM y, tras 2 s, SIGKILL). Lo mismo ocurre al salir de la app con una corrida en curso.
+- Confirmación explícita (`S`/`Y`) antes de lanzar argumentos que modifican o eliminan archivos del objetivo (p. ej. `clamscan --remove`/`--move`, escritura de metadatos con `exiftool`).
+- Historial de corridas con su estado y salida, acotado a las últimas 50 corridas y 1 MiB / 5000 líneas de salida por corrida (líneas de más de 4 KiB se recortan).
 - Resumen del host (CPU/RAM/disco) y aviso legal siempre visible.
 - Interfaz en español e inglés, conmutable en caliente.
 - Modo fixtures (datos simulados, sin ejecutar binarios) para probar la UI sin herramientas instaladas.
@@ -150,7 +152,7 @@ Ver [`config/voxsecurity.example.toml`](config/voxsecurity.example.toml).
 
 ## Logs
 
-Los logs se escriben en un archivo diario `voxsecurity-tui.log` en el directorio de datos del usuario, nunca a la terminal. El nivel por defecto es `info`; cambialo con `RUST_LOG`:
+Los logs se escriben en un archivo diario `voxsecurity-tui.log.<AAAA-MM-DD>` en el directorio de datos del usuario (`~/.local/share/voxsecurity-tui/` en Linux), nunca a la terminal. Se registran el inicio y fin de sesión (versión, usuario), cada corrida con su herramienta, objetivo, comando, si es destructiva, código de salida, duración y timeout, las instalaciones de paquetes y los errores al leer o guardar la configuración. El nivel por defecto es `info`; cambialo con `RUST_LOG`:
 
 ```sh
 RUST_LOG=debug cargo run

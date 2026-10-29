@@ -549,7 +549,7 @@ pub const ALL: &[Tool] = &[
         templates: &[
             tpl("Recursivo (solo infectados)", "Recursive (infected only)", "--recursive --infected {target}"),
             tpl("Con registro a archivo", "With log file", "--recursive --infected --log=clamscan.log {target}"),
-            tpl("Mover a cuarentena", "Move to quarantine", "--recursive --move=/tmp/cuarentena {target}"),
+            tpl("Mover a cuarentena (modifica archivos)", "Move to quarantine (modifies files)", "--recursive --move=/tmp/cuarentena {target}"),
             tpl("Eliminar infectados (destructivo)", "Remove infected (destructive)", "--recursive --remove {target}"),
         ],
         go_install: None,
@@ -637,7 +637,7 @@ pub const ALL: &[Tool] = &[
         templates: &[
             tpl("Ver metadatos", "View metadata", "{target}"),
             tpl("Solo GPS", "GPS only", "-gps:all {target}"),
-            tpl("Eliminar metadatos", "Strip metadata", "-all= {target}"),
+            tpl("Eliminar metadatos (modifica el archivo)", "Strip metadata (modifies the file)", "-all= {target}"),
             tpl("Fecha de captura", "Capture date", "-DateTimeOriginal {target}"),
         ],
         go_install: None,

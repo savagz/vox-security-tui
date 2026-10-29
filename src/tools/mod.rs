@@ -242,6 +242,27 @@ pub fn build_args(template: &str, target: &str) -> Vec<String> {
     line.split_whitespace().map(|s| s.to_string()).collect()
 }
 
+/// ¿Los argumentos modifican o eliminan archivos del objetivo? Se evalúa sobre
+/// la línea final (no sobre la plantilla elegida) para cubrir también los
+/// argumentos editados a mano. La TUI exige confirmación explícita antes de
+/// lanzar una corrida así.
+pub fn is_destructive(tool_id: &str, args: &[String]) -> bool {
+    args.iter().any(|arg| {
+        let arg = arg.as_str();
+        match tool_id {
+            "clamav" => arg.starts_with("--remove") || arg.starts_with("--move"),
+            // `-TAG=valor` (incluido `-all=`) escribe metadatos;
+            // `-delete_original` borra los respaldos `*_original`.
+            "exiftool" => {
+                (arg.starts_with('-') && arg.contains('='))
+                    || arg.starts_with("-overwrite_original")
+                    || arg.starts_with("-delete_original")
+            }
+            _ => false,
+        }
+    })
+}
+
 /// Comando de instalación sugerido para `tool` según el gestor detectado.
 /// Devuelve `None` si no hay gestor conocido.
 pub fn install_command(tool: &Tool, pm: Option<PackageManager>) -> Option<Vec<String>> {
@@ -427,6 +448,18 @@ mod tests {
         let (kind, cmd) = alt_install_command(amass, Some(PackageManager::Apt)).expect("vía go");
         assert_eq!(kind, AltKind::Go);
         assert!(cmd.last().unwrap().contains("go install github.com/owasp-amass"));
+    }
+
+    #[test]
+    fn is_destructive_detecta_flags_que_alteran_el_objetivo() {
+        let args = |s: &str| build_args(s, "/srv/datos");
+        assert!(is_destructive("clamav", &args("--recursive --remove {target}")));
+        assert!(is_destructive("clamav", &args("--recursive --move=/tmp/cuarentena {target}")));
+        assert!(!is_destructive("clamav", &args("--recursive --infected {target}")));
+        assert!(is_destructive("exiftool", &args("-all= {target}")));
+        assert!(is_destructive("exiftool", &args("-Artist=yo {target}")));
+        assert!(!is_destructive("exiftool", &args("-gps:all {target}")));
+        assert!(!is_destructive("nmap", &args("--remove {target}")));
     }
 
     #[test]

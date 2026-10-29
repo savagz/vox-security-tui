@@ -90,11 +90,20 @@ pub fn render(frame: &mut Frame, area: Rect, form: &RunForm, theme: &Theme, lang
         frame.render_widget(Paragraph::new(value_line), *value_row);
     }
 
-    if let Some(error) = &form.error {
-        frame.render_widget(
-            Paragraph::new(Span::styled(error.clone(), theme.style_for(crate::theme::Status::Error))),
-            rows[7],
-        );
+    // Fila de avisos: error de validación, o la advertencia/confirmación de
+    // argumentos destructivos (evaluada sobre los argumentos tal como quedan).
+    let destructive = tools::is_destructive(form.tool_id, &tools::build_args(&form.args, &form.target));
+    let notice = if let Some(error) = &form.error {
+        Some((error.clone(), crate::theme::Status::Error))
+    } else if form.confirm {
+        Some((i18n::t(lang, Key::FormDestructiveConfirm).to_string(), crate::theme::Status::Error))
+    } else if destructive {
+        Some((i18n::t(lang, Key::FormDestructiveWarning).to_string(), crate::theme::Status::Warning))
+    } else {
+        None
+    };
+    if let Some((message, status)) = notice {
+        frame.render_widget(Paragraph::new(Span::styled(message, theme.style_for(status))), rows[7]);
     }
 
     let keys = Line::from(vec![

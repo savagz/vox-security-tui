@@ -16,6 +16,14 @@ use crate::ui::tabs::Tab;
 /// memoria sin tope en herramientas muy verbosas.
 const MAX_OUTPUT_LINES: usize = 5000;
 
+/// Máximo de bytes de salida por corrida (las líneas ya vienen recortadas por
+/// el runner, pero 5000 líneas largas siguen siendo mucho).
+const MAX_OUTPUT_BYTES: usize = 1024 * 1024;
+
+/// Máximo de corridas en el historial; al superarlo se descartan las más
+/// viejas que ya terminaron.
+const MAX_RUNS: usize = 50;
+
 /// Canal de recarga en caliente hacia el poller. Guardar en el overlay de
 /// configuración empuja la config nueva por acá.
 pub struct Reload {
@@ -46,6 +54,8 @@ pub struct RunRecord {
     pub started: String,
     pub status: RunStatus,
     pub output: Vec<String>,
+    /// Bytes acumulados en `output`, para aplicar `MAX_OUTPUT_BYTES`.
+    pub output_bytes: usize,
 }
 
 /// Formulario de corrida (tecla `n` en EJECUTAR): objetivo + argumentos.
@@ -58,6 +68,8 @@ pub struct RunForm {
     pub target: String,
     pub args: String,
     pub error: Option<String>,
+    /// Los argumentos son destructivos y ya se pulsó ENTER: espera `S`/`Y`.
+    pub confirm: bool,
 }
 
 impl RunForm {
@@ -158,10 +170,20 @@ impl App {
             AppEvent::ToolsUpdated(states) => self.tool_states = states,
             AppEvent::ScanLine { run_id, line } => {
                 if let Some(rec) = self.runs.iter_mut().find(|r| r.id == run_id) {
+                    rec.output_bytes += line.len();
                     rec.output.push(line);
-                    if rec.output.len() > MAX_OUTPUT_LINES {
-                        let overflow = rec.output.len() - MAX_OUTPUT_LINES;
+                    let mut overflow = rec.output.len().saturating_sub(MAX_OUTPUT_LINES);
+                    let mut bytes = rec.output_bytes;
+                    for old in &rec.output[..overflow] {
+                        bytes -= old.len();
+                    }
+                    while bytes > MAX_OUTPUT_BYTES && overflow + 1 < rec.output.len() {
+                        bytes -= rec.output[overflow].len();
+                        overflow += 1;
+                    }
+                    if overflow > 0 {
                         rec.output.drain(0..overflow);
+                        rec.output_bytes = bytes;
                     }
                 }
             }
@@ -463,20 +485,43 @@ impl App {
             target: String::new(),
             args: tool.default_args().to_string(),
             error: None,
+            confirm: false,
         });
     }
 
+    /// `R` repite la última corrida, salvo que sea destructiva: en ese caso
+    /// reabre el formulario prellenado para que se confirme de nuevo.
     fn rerun(&mut self) {
-        if let Some((id, target, args)) = self.last_run.clone()
-            && let Some(tool) = tools::catalog::by_id(id)
-        {
-            self.start_run(tool, target, args);
+        let Some((id, target, args)) = self.last_run.clone() else {
+            return;
+        };
+        let Some(tool) = tools::catalog::by_id(id) else {
+            return;
+        };
+        if tools::is_destructive(tool.id, &tools::build_args(&args, &target)) {
+            let template_idx = tool.templates.iter().position(|t| t.args == args).unwrap_or(0);
+            self.form = Some(RunForm {
+                tool_id: tool.id,
+                focus: 0,
+                template_idx,
+                target,
+                args,
+                error: None,
+                confirm: false,
+            });
+            self.toast = Some((
+                i18n::t(self.lang, Key::MainRerunNeedsConfirm).to_string(),
+                Status::Warning,
+            ));
+            return;
         }
+        self.start_run(tool, target, args);
     }
 
     fn clear_output(&mut self) {
         if let Some(rec) = self.runs.first_mut() {
             rec.output.clear();
+            rec.output_bytes = 0;
             self.scan_scroll = 0;
         }
     }
@@ -492,6 +537,15 @@ impl App {
         } else {
             format!("{program} {}", args.join(" "))
         };
+        tracing::info!(
+            run_id,
+            tool = tool.id,
+            target = %target,
+            command = %command,
+            destructive = tools::is_destructive(tool.id, &args),
+            fixtures = self.env.fixtures,
+            "corrida iniciada"
+        );
 
         self.runs.insert(
             0,
@@ -502,8 +556,17 @@ impl App {
                 started: Local::now().format("%H:%M:%S").to_string(),
                 status: RunStatus::Running,
                 output: Vec::new(),
+                output_bytes: 0,
             },
         );
+        while self.runs.len() > MAX_RUNS {
+            match self.runs.iter().rposition(|r| r.status != RunStatus::Running) {
+                Some(i) => {
+                    self.runs.remove(i);
+                }
+                None => break,
+            }
+        }
         self.logs_row = 0;
         self.scan_scroll = 0;
         self.selected_tool = Some(tool.id);
@@ -554,7 +617,24 @@ impl App {
     fn apply_config(&mut self, config: Config) {
         self.lang = config.ui.language;
         self.system_check.set_lang(self.lang);
-        let _ = config.save();
+        self.toast = Some(match config.save() {
+            Ok(path) => {
+                tracing::info!(path = %path.display(), "configuración guardada");
+                (
+                    i18n::t(self.lang, Key::MainConfigSavedTemplate)
+                        .replacen("{}", &path.display().to_string(), 1),
+                    Status::Ok,
+                )
+            }
+            Err(e) => {
+                tracing::error!(error = %format!("{e:#}"), "no se pudo guardar la configuración");
+                (
+                    i18n::t(self.lang, Key::MainConfigSaveErrTemplate)
+                        .replacen("{}", &format!("{e:#}"), 1),
+                    Status::Error,
+                )
+            }
+        });
         let _ = self.reload.config.send(config.clone());
         self.config = config;
     }
@@ -564,6 +644,19 @@ impl App {
             return;
         };
         form.error = None;
+        if form.confirm {
+            form.confirm = false;
+            if matches!(key.code, KeyCode::Char('s' | 'S' | 'y' | 'Y'))
+                && let Some(tool) = tools::catalog::by_id(form.tool_id)
+            {
+                let target = form.target.trim().to_string();
+                let args = form.args.clone();
+                tracing::warn!(tool = tool.id, target = %target, "corrida destructiva confirmada");
+                self.form = None;
+                self.start_run(tool, target, args);
+            }
+            return;
+        }
         match key.code {
             KeyCode::Esc => self.form = None,
             KeyCode::Tab | KeyCode::Down => {
@@ -602,6 +695,10 @@ impl App {
                     return;
                 }
                 if let Some(tool) = tools::catalog::by_id(tool_id) {
+                    if tools::is_destructive(tool.id, &tools::build_args(&args, &target)) {
+                        form.confirm = true;
+                        return;
+                    }
                     self.form = None;
                     self.start_run(tool, target, args);
                 }
@@ -745,5 +842,94 @@ mod tests {
         app.on_event(AppEvent::ScanFinished { run_id, code: 0, ok: true });
         assert_eq!(app.runs[0].output, vec!["linea 1".to_string()]);
         assert_eq!(app.runs[0].status, RunStatus::Finished { code: 0, ok: true });
+    }
+
+    fn abrir_form(app: &mut App, tool: &'static str, template: &str) {
+        app.selected_tool = Some(tool);
+        app.active_tab = Tab::Scan;
+        press(app, KeyCode::Char('n'));
+        let t = tools::catalog::by_id(tool).unwrap();
+        let idx = t.templates.iter().position(|x| x.name.0 == template).unwrap();
+        for _ in 0..idx {
+            press(app, KeyCode::Right);
+        }
+        for c in "/srv/datos".chars() {
+            press(app, KeyCode::Char(c));
+        }
+    }
+
+    #[test]
+    fn plantilla_destructiva_exige_confirmacion() {
+        let mut app = app();
+        abrir_form(&mut app, "clamav", "Eliminar infectados (destructivo)");
+        press(&mut app, KeyCode::Enter);
+        assert!(app.runs.is_empty());
+        assert!(app.form.as_ref().unwrap().confirm);
+
+        // Cualquier otra tecla cancela la confirmación sin lanzar nada.
+        press(&mut app, KeyCode::Char('n'));
+        assert!(app.runs.is_empty());
+        assert!(!app.form.as_ref().unwrap().confirm);
+
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('s'));
+        assert!(app.form.is_none());
+        assert_eq!(app.runs.len(), 1);
+        assert!(matches!(app.take_pending(), Some(PendingAction::RunScan { .. })));
+    }
+
+    #[test]
+    fn plantilla_no_destructiva_se_lanza_directo() {
+        let mut app = app();
+        abrir_form(&mut app, "clamav", "Recursivo (solo infectados)");
+        press(&mut app, KeyCode::Enter);
+        assert!(app.form.is_none());
+        assert_eq!(app.runs.len(), 1);
+    }
+
+    #[test]
+    fn repetir_una_corrida_destructiva_reabre_el_form() {
+        let mut app = app();
+        abrir_form(&mut app, "exiftool", "Eliminar metadatos (modifica el archivo)");
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('y'));
+        assert_eq!(app.runs.len(), 1);
+        app.take_pending();
+
+        press(&mut app, KeyCode::Char('R'));
+        assert_eq!(app.runs.len(), 1);
+        assert!(app.take_pending().is_none());
+        let form = app.form.as_ref().expect("form reabierto");
+        assert_eq!(form.target, "/srv/datos");
+        assert_eq!(form.args, "-all= {target}");
+    }
+
+    #[test]
+    fn el_historial_descarta_las_corridas_terminadas_mas_viejas() {
+        let mut app = app();
+        let tool = tools::catalog::by_id("nmap").unwrap();
+        for _ in 0..MAX_RUNS + 5 {
+            app.start_run(tool, "10.0.0.1".to_string(), tool.default_args().to_string());
+            let run_id = app.runs[0].id;
+            app.on_event(AppEvent::ScanFinished { run_id, code: 0, ok: true });
+        }
+        assert_eq!(app.runs.len(), MAX_RUNS);
+        // Se conservan las más nuevas.
+        assert_eq!(app.runs[0].id, (MAX_RUNS + 5) as u64);
+    }
+
+    #[test]
+    fn la_salida_respeta_el_tope_de_bytes() {
+        let mut app = app();
+        let tool = tools::catalog::by_id("nmap").unwrap();
+        app.start_run(tool, "10.0.0.1".to_string(), tool.default_args().to_string());
+        let run_id = app.runs[0].id;
+        let line = "x".repeat(4096);
+        for _ in 0..(MAX_OUTPUT_BYTES / 4096) * 2 {
+            app.on_event(AppEvent::ScanLine { run_id, line: line.clone() });
+        }
+        let rec = &app.runs[0];
+        assert!(rec.output_bytes <= MAX_OUTPUT_BYTES);
+        assert_eq!(rec.output_bytes, rec.output.iter().map(String::len).sum::<usize>());
     }
 }

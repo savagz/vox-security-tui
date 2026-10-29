@@ -140,6 +140,8 @@ pub enum Key {
     FormNextField,
     FormTemplateHint,
     FormErrNoCommand,
+    FormDestructiveWarning,
+    FormDestructiveConfirm,
 
     // -- info popup --
     InfoTitleTemplate,
@@ -207,6 +209,10 @@ pub enum Key {
     MainNoAltInstall,
     MainScanStartedTemplate,
     MainSentToScanTemplate,
+    MainRerunNeedsConfirm,
+    MainConfigLoadErrTemplate,
+    MainConfigSaveErrTemplate,
+    MainConfigSavedTemplate,
 }
 
 pub fn t(lang: Lang, key: Key) -> &'static str {
@@ -327,6 +333,8 @@ fn pair(key: Key) -> (&'static str, &'static str) {
         FormNextField => ("campo siguiente", "next field"),
         FormTemplateHint => ("plantilla", "template"),
         FormErrNoCommand => ("no hay comando para ejecutar", "there is no command to run"),
+        FormDestructiveWarning => ("⚠ estos argumentos modifican o eliminan archivos del objetivo", "⚠ these arguments modify or delete files on the target"),
+        FormDestructiveConfirm => ("ACCIÓN DESTRUCTIVA: pulsá S para confirmar, cualquier otra tecla para volver", "DESTRUCTIVE ACTION: press Y to confirm, any other key to go back"),
 
         InfoTitleTemplate => ("herramienta · {}", "tool · {}"),
         InfoHint => ("↑↓ scroll · cualquier otra tecla cierra", "↑↓ scroll · any other key closes"),
@@ -390,5 +398,9 @@ fn pair(key: Key) -> (&'static str, &'static str) {
         MainNoAltInstall => ("No hay vía alternativa (go install / COPR) para esta herramienta.", "No alternative install path (go install / COPR) for this tool."),
         MainScanStartedTemplate => ("Ejecutando {}", "Running {}"),
         MainSentToScanTemplate => ("{} seleccionada · pestaña Ejecutar (3)", "{} selected · Scan tab (3)"),
+        MainRerunNeedsConfirm => ("La última corrida es destructiva: revisala y confirmá", "The last run is destructive: review it and confirm"),
+        MainConfigLoadErrTemplate => ("No se pudo cargar la configuración, se usan los valores por defecto: {}", "Could not load the settings, using defaults: {}"),
+        MainConfigSaveErrTemplate => ("Ajustes aplicados sólo en esta sesión, no se pudieron guardar: {}", "Settings applied for this session only, could not be saved: {}"),
+        MainConfigSavedTemplate => ("Configuración guardada en {}", "Settings saved to {}"),
     }
 }

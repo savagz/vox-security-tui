@@ -73,8 +73,23 @@ async fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<()> {
     input.start();
     spawn_signal_task(tx.clone());
 
-    let config = Config::load().ok().flatten().unwrap_or_default();
     let env = Env::detect();
+    tracing::info!(
+        version = env!("CARGO_PKG_VERSION"),
+        user = %std::env::var("USER").unwrap_or_default(),
+        fixtures = env.fixtures,
+        "inicio de sesión"
+    );
+
+    let (config, config_error) = match Config::load() {
+        Ok(Some(config)) => (config, None),
+        Ok(None) => (Config::default(), None),
+        Err(e) => {
+            let message = format!("{e:#}");
+            tracing::error!(error = %message, "no se pudo cargar la configuración");
+            (Config::default(), Some(message))
+        }
+    };
 
     // El wizard de verificación sólo bloquea si hay algo en rojo. Como ningún
     // chequeo es bloqueante (la app es un orquestador y arranca igual), en la
@@ -87,7 +102,10 @@ async fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<()> {
         }
     }
 
-    run_app(terminal, config, env, system_check, tx, rx, input).await
+    let startup = Startup { config, config_error, env, system_check };
+    let result = run_app(terminal, startup, tx, rx, input).await;
+    tracing::info!("fin de sesión");
+    result
 }
 
 struct Input {
@@ -143,15 +161,23 @@ async fn run_gate(
     Ok(GateResult::Quit)
 }
 
-async fn run_app(
-    terminal: &mut ratatui::DefaultTerminal,
+/// Estado resuelto antes de entrar al panel principal.
+struct Startup {
     config: Config,
+    /// Error al leer la config existente; se muestra como toast al arrancar.
+    config_error: Option<String>,
     env: Env,
     system_check: SystemCheckState,
+}
+
+async fn run_app(
+    terminal: &mut ratatui::DefaultTerminal,
+    startup: Startup,
     tx: mpsc::Sender<AppEvent>,
     mut rx: mpsc::Receiver<AppEvent>,
     mut input: Input,
 ) -> Result<()> {
+    let Startup { config, config_error, env, system_check } = startup;
     let tick_rate = Duration::from_millis(config.ui.tick_rate_ms);
     let (config_tx, config_rx) = watch::channel(config.clone());
 
@@ -160,6 +186,12 @@ async fn run_app(
     poller::spawn(env, config_rx, tx.clone());
 
     let mut app = App::new(config, Reload { config: config_tx }, env, system_check);
+    if let Some(error) = config_error {
+        app.toast = Some((
+            i18n::t(app.lang, Key::MainConfigLoadErrTemplate).replacen("{}", &error, 1),
+            Status::Error,
+        ));
+    }
 
     terminal.draw(|frame| ui::draw(frame, &app))?;
 
@@ -218,7 +250,12 @@ fn run_install(
     ratatui::restore();
 
     println!("\n>> {}\n", tools::command_line(command));
+    tracing::info!(command = %tools::command_line(command), "instalación iniciada");
     let outcome = tools::run_install(command);
+    match &outcome {
+        Ok(ok) => tracing::info!(ok, "instalación terminada"),
+        Err(e) => tracing::error!(error = %e, "no se pudo ejecutar la instalación"),
+    }
 
     println!("\n{}", i18n::t(lang, Key::MainPressEnterToReturn));
     let mut discard = String::new();
